@@ -14,22 +14,38 @@ class Reader {
         return this.integer();
       case "l":
         return this.list();
+      case "d":
+        return this.dictionary();
     }
 
     return this.string();
   }
 
-  public list(): readonly unknown[] {
+  public dictionary(): Record<string, unknown> {
     ++this.index;
-    const elements: unknown[] = [];
+    const result: Record<string, unknown> = {};
 
     while (!(this.current === "e")) {
-      elements.push(this.read());
+      const key = this.string();
+      const value = this.read();
+
+      result[key] = value;
+    }
+
+    return result;
+  }
+
+  public list(): readonly unknown[] {
+    ++this.index;
+    const result: unknown[] = [];
+
+    while (!(this.current === "e")) {
+      result.push(this.read());
     }
 
     ++this.index;
 
-    return elements;
+    return result;
   }
 
   public integer(): number {
