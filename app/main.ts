@@ -66,7 +66,8 @@ class Reader {
   public string(): string {
     const colonIndex = this.value.indexOf(":", this.index);
     if (colonIndex < 0) {
-      throw new Error("Failed to decode string");
+      console.log(this.value);
+      throw new Error("Failed to decode string (can't find colon)");
     }
 
     const prefix = this.value.substring(this.index, colonIndex);
