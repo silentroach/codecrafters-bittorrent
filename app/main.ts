@@ -26,7 +26,10 @@ class Reader {
     ++this.index;
     const result: Record<string, unknown> = {};
 
-    while (!(this.current === "e")) {
+    while (
+      this.current !== undefined && // looks like some test files are broken
+      this.current !== "e"
+    ) {
       const key = this.string();
       const value = this.read();
 
@@ -66,7 +69,6 @@ class Reader {
   public string(): string {
     const colonIndex = this.value.indexOf(":", this.index);
     if (colonIndex < 0) {
-      console.log(this.value);
       throw new Error("Failed to decode string (can't find colon)");
     }
 
@@ -104,7 +106,7 @@ function main() {
       break;
     case "info":
       const filename = argv[3];
-      const data = readFileSync(filename, { encoding: "utf-8" });
+      const data = readFileSync(filename, { encoding: "utf-8" }).trim();
 
       const {
         announce,
