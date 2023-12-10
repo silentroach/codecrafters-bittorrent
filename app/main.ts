@@ -1,4 +1,5 @@
-import process from "node:process";
+import { argv } from "node:process";
+import { readFileSync } from "node:fs";
 
 class Reader {
   private index: number = 0;
@@ -89,16 +90,32 @@ function decodeBencode(bencodedValue: string) {
 }
 
 function main() {
-  const command = process.argv[2];
+  const command = argv[2];
 
-  if (command === "decode") {
-    const bencodedValue = process.argv[3];
+  switch (command) {
+    case "decode":
+      const bencodedValue = argv[3];
 
-    // In JavaScript, there's no need to manually convert bytes to string for printing
-    // because JS doesn't distinguish between bytes and strings in the same way Python does.
-    console.log(JSON.stringify(decodeBencode(bencodedValue)));
-  } else {
-    throw new Error(`Unknown command ${command}`);
+      // In JavaScript, there's no need to manually convert bytes to string for printing
+      // because JS doesn't distinguish between bytes and strings in the same way Python does.
+      console.log(JSON.stringify(decodeBencode(bencodedValue)));
+
+      break;
+    case "info":
+      const filename = argv[3];
+      const data = readFileSync(filename, { encoding: "utf-8" });
+
+      const {
+        announce,
+        info: { length },
+      } = decodeBencode(data);
+
+      console.log(`Tracker URL: ${announce}
+Length: ${length}`);
+
+      break;
+    default:
+      throw new Error(`Unknown command ${command}`);
   }
 }
 
