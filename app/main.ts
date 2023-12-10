@@ -1,45 +1,75 @@
 import process from "node:process";
-import util from "node:util";
 
-function decodeInteger(value) {
-  if (value.at(-1) !== "e") {
-    throw new Error("Invalid encoded integer");
+class Reader {
+  private index: number = 0;
+  constructor(private readonly value: string) {}
+
+  private get current() {
+    return this.value.at(this.index);
   }
 
-  const integerString = value.substring(1, value.length - 1);
+  public read(): unknown {
+    switch (this.current) {
+      case "i":
+        return this.integer();
+      case "l":
+        return this.list();
+    }
 
-  const result = parseInt(integerString, 10);
-  if (!Number.isFinite(result)) {
-    throw new Error("Invalid encoded integer");
+    return this.string();
   }
 
-  return result;
-}
+  public list(): readonly unknown[] {
+    ++this.index;
+    const elements: unknown[] = [];
 
-function decodeString(value) {
-  const firstColonIndex = value.indexOf(":");
-  if (firstColonIndex < 0) {
-    throw new Error("Invalid encoded value");
+    while (!(this.current === "e")) {
+      elements.push(this.read());
+    }
+
+    ++this.index;
+
+    return elements;
   }
 
-  const prefix = value.substr(0, firstColonIndex);
+  public integer(): number {
+    const endIndex = this.value.indexOf("e", this.index + 1);
+    const rawValue = this.value.substring(this.index + 1, endIndex);
+    const value = parseInt(rawValue, 10);
 
-  // string?
-  const length = parseInt(prefix, 10);
-  if (Number.isFinite(length) && length > 0) {
-    return value.substr(firstColonIndex + 1, length);
+    if (!Number.isFinite(value)) {
+      throw new Error("Failed to decode integer");
+    }
+
+    this.index = endIndex + 1;
+
+    return value;
+  }
+
+  public string(): string {
+    const colonIndex = this.value.indexOf(":", this.index);
+    if (colonIndex < 0) {
+      throw new Error("Failed to decode string");
+    }
+
+    const prefix = this.value.substring(this.index, colonIndex);
+    const length = parseInt(prefix, 10);
+
+    if (!Number.isFinite(length) || length === 0) {
+      throw new Error("Failed to decode string length");
+    }
+
+    this.index = colonIndex + 1 + length;
+
+    return this.value.substring(this.index - length, this.index);
   }
 }
 
 // Examples:
 // - decodeBencode("5:hello") -> "hello"
 // - decodeBencode("10:hello12345") -> "hello12345"
-function decodeBencode(bencodedValue) {
-  if (bencodedValue.at(0) === "i") {
-    return decodeInteger(bencodedValue);
-  }
-
-  return decodeString(bencodedValue);
+function decodeBencode(bencodedValue: string) {
+  return new Reader(bencodedValue).read();
 }
 
 function main() {
