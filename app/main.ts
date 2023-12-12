@@ -78,7 +78,10 @@ class Writer {
 
 class Reader {
   private index: number = 0;
-  constructor(private readonly value: Buffer) {}
+  constructor(
+    private readonly value: Buffer,
+    private readonly stringsAsBuffer = true
+  ) {}
 
   private get current() {
     return this.value.at(this.index);
@@ -138,7 +141,7 @@ class Reader {
     return value;
   }
 
-  public string(): Buffer {
+  public string(): Buffer | string {
     const colonIndex = this.value.indexOf(TokenColon, this.index);
     if (colonIndex < 0) {
       throw new Error("Failed to decode string (can't find colon)");
@@ -153,7 +156,8 @@ class Reader {
 
     this.index = colonIndex + 1 + length;
 
-    return this.value.subarray(this.index - length, this.index);
+    const string = this.value.subarray(this.index - length, this.index);
+    return this.stringsAsBuffer ? string : String(string);
   }
 }
 
@@ -167,7 +171,7 @@ function main() {
       // In JavaScript, there's no need to manually convert bytes to string for printing
       // because JS doesn't distinguish between bytes and strings in the same way Python does.
       console.log(
-        JSON.stringify(new Reader(Buffer.from(bencodedValue)).read())
+        JSON.stringify(new Reader(Buffer.from(bencodedValue), false).read())
       );
 
       break;
