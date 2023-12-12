@@ -1,9 +1,85 @@
 import { argv } from "node:process";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+
+const getCodeAndBuffer = (char: string): [Buffer, number] => [
+  Buffer.from(char),
+  char.charCodeAt(0),
+];
+
+const [TokenInteger, TokenIntegerCode] = getCodeAndBuffer("i");
+const [TokenList, TokenListCode] = getCodeAndBuffer("l");
+const [TokenDictionary, TokenDictionaryCode] = getCodeAndBuffer("d");
+const [TokenEnd, TokenEndCode] = getCodeAndBuffer("e");
+const [TokenColon, TokenColonCode] = getCodeAndBuffer(":");
+
+class Writer {
+  private buffers: Buffer[] = [];
+
+  public static write(data: unknown): Buffer {
+    const writer = new Writer();
+    writer.write(data);
+
+    return Buffer.concat(writer.buffers);
+  }
+
+  private write(value: unknown): void {
+    if (value === null || value === undefined) {
+      throw new Error(`Unsupported data type`);
+    }
+
+    switch (typeof value) {
+      case "object":
+        if (Array.isArray(value)) {
+          this.list(value);
+        } else {
+          this.dictionary(value as Record<string, unknown>);
+        }
+        break;
+      case "number":
+        this.integer(value);
+        break;
+      case "string":
+        this.string(value);
+        break;
+      default:
+        throw new Error(`Unsupported data type ${typeof value}`);
+    }
+  }
+
+  private dictionary(value: Record<string, unknown>): void {
+    const keys = Object.keys(value).sort();
+
+    this.buffers.push(TokenDictionary);
+
+    for (const key of keys) {
+      this.string(key);
+      this.write(value[key]);
+    }
+
+    this.buffers.push(TokenEnd);
+  }
+
+  private string(value: string): void {
+    const data = Buffer.from(value);
+
+    this.buffers.push(Buffer.from(String(data.length)), TokenColon, data);
+  }
+
+  private integer(value: number): void {
+    this.buffers.push(TokenInteger, Buffer.from(String(value)), TokenEnd);
+  }
+
+  private list(data: unknown[]): void {
+    this.buffers.push(TokenList);
+
+    this.buffers.push(TokenEnd);
+  }
+}
 
 class Reader {
   private index: number = 0;
-  constructor(private readonly value: string) {}
+  constructor(private readonly value: Buffer) {}
 
   private get current() {
     return this.value.at(this.index);
@@ -11,11 +87,11 @@ class Reader {
 
   public read(): unknown {
     switch (this.current) {
-      case "i":
+      case TokenIntegerCode:
         return this.integer();
-      case "l":
+      case TokenListCode:
         return this.list();
-      case "d":
+      case TokenDictionaryCode:
         return this.dictionary();
     }
 
@@ -26,10 +102,7 @@ class Reader {
     ++this.index;
     const result: Record<string, unknown> = {};
 
-    while (
-      this.current !== undefined && // looks like some test files are broken
-      this.current !== "e"
-    ) {
+    while (this.current !== TokenEndCode) {
       const key = this.string();
       const value = this.read();
 
@@ -43,7 +116,7 @@ class Reader {
     ++this.index;
     const result: unknown[] = [];
 
-    while (!(this.current === "e")) {
+    while (!(this.current === TokenEndCode)) {
       result.push(this.read());
     }
 
@@ -53,9 +126,9 @@ class Reader {
   }
 
   public integer(): number {
-    const endIndex = this.value.indexOf("e", this.index + 1);
-    const rawValue = this.value.substring(this.index + 1, endIndex);
-    const value = parseInt(rawValue, 10);
+    const endIndex = this.value.indexOf(TokenEnd, this.index + 1);
+    const rawValue = this.value.subarray(this.index + 1, endIndex);
+    const value = parseInt(rawValue.toString(), 10);
 
     if (!Number.isFinite(value)) {
       throw new Error("Failed to decode integer");
@@ -67,13 +140,13 @@ class Reader {
   }
 
   public string(): string {
-    const colonIndex = this.value.indexOf(":", this.index);
+    const colonIndex = this.value.indexOf(TokenColon, this.index);
     if (colonIndex < 0) {
       throw new Error("Failed to decode string (can't find colon)");
     }
 
-    const prefix = this.value.substring(this.index, colonIndex);
-    const length = parseInt(prefix, 10);
+    const prefix = this.value.subarray(this.index, colonIndex);
+    const length = parseInt(prefix.toString(), 10);
 
     if (!Number.isFinite(length) || length === 0) {
       throw new Error("Failed to decode string length");
@@ -81,15 +154,8 @@ class Reader {
 
     this.index = colonIndex + 1 + length;
 
-    return this.value.substring(this.index - length, this.index);
+    return this.value.subarray(this.index - length, this.index).toString();
   }
-}
-
-// Examples:
-// - decodeBencode("5:hello") -> "hello"
-// - decodeBencode("10:hello12345") -> "hello12345"
-function decodeBencode(bencodedValue: string) {
-  return new Reader(bencodedValue).read();
 }
 
 function main() {
@@ -101,20 +167,23 @@ function main() {
 
       // In JavaScript, there's no need to manually convert bytes to string for printing
       // because JS doesn't distinguish between bytes and strings in the same way Python does.
-      console.log(JSON.stringify(decodeBencode(bencodedValue)));
+      console.log(
+        JSON.stringify(new Reader(Buffer.from(bencodedValue)).read())
+      );
 
       break;
     case "info":
       const filename = argv[3];
-      const data = readFileSync(filename, { encoding: "utf-8" }).trim();
+      const data = readFileSync(filename);
 
-      const {
-        announce,
-        info: { length },
-      } = decodeBencode(data);
+      const { announce, info } = new Reader(data).read();
+
+      const hash = createHash("sha-1");
+      const digest = hash.update(Writer.write(info)).end().digest("hex");
 
       console.log(`Tracker URL: ${announce}
-Length: ${length}`);
+Length: ${info.length}
+Info Hash: ${digest}`);
 
       break;
     default:
