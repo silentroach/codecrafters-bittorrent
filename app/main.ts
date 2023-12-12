@@ -63,7 +63,7 @@ class Writer {
   private string(value: string): void {
     const data = Buffer.from(value);
 
-    this.buffers.push(Buffer.from(String(data.length)), TokenColon, data);
+    this.buffers.push(Buffer.from(String(value.length)), TokenColon, data);
   }
 
   private integer(value: number): void {
