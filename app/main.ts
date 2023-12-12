@@ -19,7 +19,6 @@ class Writer {
   public static write(data: unknown): Buffer {
     const writer = new Writer();
     writer.write(data);
-
     return Buffer.concat(writer.buffers);
   }
 
@@ -28,23 +27,17 @@ class Writer {
       throw new Error(`Unsupported data type`);
     }
 
-    switch (typeof value) {
-      case "object":
-        if (Array.isArray(value)) {
-          this.list(value);
-        } else {
-          this.dictionary(value as Record<string, unknown>);
-        }
-        break;
-      case "number":
-        this.integer(value);
-        break;
-      case "string":
-        this.string(value);
-        break;
-      default:
-        throw new Error(`Unsupported data type ${typeof value}`);
-    }
+    if (Buffer.isBuffer(value) || typeof value === "string") {
+      this.string(value);
+    } else if (typeof value === "number") {
+      this.integer(value);
+    } else if (typeof value === "object") {
+      if (Array.isArray(value)) {
+        this.list(value);
+      } else {
+        this.dictionary(value as Record<string, unknown>);
+      }
+    } else throw new Error(`Unsupported data type ${typeof value}`);
   }
 
   private dictionary(value: Record<string, unknown>): void {
@@ -60,12 +53,12 @@ class Writer {
     this.buffers.push(TokenEnd);
   }
 
-  private string(value: string): void {
-    this.buffers.push(
-      Buffer.from(String(value.length)),
-      TokenColon,
-      Buffer.from(value)
-    );
+  private string(value: string | Buffer): void {
+    if (!Buffer.isBuffer(value)) {
+      value = Buffer.from(value);
+    }
+
+    this.buffers.push(Buffer.from(String(value.length)), TokenColon, value);
   }
 
   private integer(value: number): void {
@@ -112,7 +105,7 @@ class Reader {
       const key = this.string();
       const value = this.read();
 
-      result[key] = value;
+      result[String(key)] = value;
     }
 
     return result;
@@ -145,7 +138,7 @@ class Reader {
     return value;
   }
 
-  public string(): string {
+  public string(): Buffer {
     const colonIndex = this.value.indexOf(TokenColon, this.index);
     if (colonIndex < 0) {
       throw new Error("Failed to decode string (can't find colon)");
@@ -160,7 +153,7 @@ class Reader {
 
     this.index = colonIndex + 1 + length;
 
-    return this.value.subarray(this.index - length, this.index).toString();
+    return this.value.subarray(this.index - length, this.index);
   }
 }
 
@@ -184,10 +177,8 @@ function main() {
 
       const { announce, info } = new Reader(data).read();
 
-      const infoEncoded = Writer.write(info);
-
       const hash = createHash("sha-1");
-      const digest = hash.update(infoEncoded).end().digest("hex");
+      const digest = hash.update(Writer.write(info)).end().digest("hex");
 
       console.log(`Tracker URL: ${announce}
 Length: ${info.length}
