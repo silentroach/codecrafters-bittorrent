@@ -161,6 +161,18 @@ class Reader {
   }
 }
 
+const getPieceHashes = (pieces: Buffer): readonly string[] => {
+  const result: string[] = [];
+
+  let idx = 0;
+  while (idx < pieces.length) {
+    result.push(pieces.subarray(idx, idx + 20).toString("hex"));
+    idx += 20;
+  }
+
+  return result;
+};
+
 function main() {
   const command = argv[2];
 
@@ -179,14 +191,28 @@ function main() {
       const filename = argv[3];
       const data = readFileSync(filename);
 
-      const { announce, info } = new Reader(data).read();
+      const { announce, info } = new Reader(data).read() as Record<
+        string,
+        unknown
+      >;
+
+      const {
+        length,
+        "piece length": pieceLength,
+        pieces,
+      } = info as Record<string, unknown> & {
+        pieces: Buffer;
+      };
 
       const hash = createHash("sha-1");
       const digest = hash.update(Writer.write(info)).end().digest("hex");
 
       console.log(`Tracker URL: ${announce}
-Length: ${info.length}
-Info Hash: ${digest}`);
+Length: ${length}
+Info Hash: ${digest}
+Piece Length: ${pieceLength}
+Piece Hashes:
+${getPieceHashes(pieces).join("\n")}`);
 
       break;
     default:
