@@ -61,9 +61,11 @@ class Writer {
   }
 
   private string(value: string): void {
-    const data = Buffer.from(value);
-
-    this.buffers.push(Buffer.from(String(value.length)), TokenColon, data);
+    this.buffers.push(
+      Buffer.from(String(value.length)),
+      TokenColon,
+      Buffer.from(value)
+    );
   }
 
   private integer(value: number): void {
@@ -72,6 +74,10 @@ class Writer {
 
   private list(data: unknown[]): void {
     this.buffers.push(TokenList);
+
+    for (const item of data) {
+      this.write(item);
+    }
 
     this.buffers.push(TokenEnd);
   }
@@ -178,8 +184,10 @@ function main() {
 
       const { announce, info } = new Reader(data).read();
 
+      const infoEncoded = Writer.write(info);
+
       const hash = createHash("sha-1");
-      const digest = hash.update(Writer.write(info)).end().digest("hex");
+      const digest = hash.update(infoEncoded).end().digest("hex");
 
       console.log(`Tracker URL: ${announce}
 Length: ${info.length}
