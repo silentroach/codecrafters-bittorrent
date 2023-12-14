@@ -1,223 +1,104 @@
 import { argv } from "node:process";
-import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 
-const getCodeAndBuffer = (char: string): [Buffer, number] => [
-  Buffer.from(char),
-  char.charCodeAt(0),
-];
+import { decode } from "./bencode";
+import { readTorrentFile } from "./torrent";
 
-const [TokenInteger, TokenIntegerCode] = getCodeAndBuffer("i");
-const [TokenList, TokenListCode] = getCodeAndBuffer("l");
-const [TokenDictionary, TokenDictionaryCode] = getCodeAndBuffer("d");
-const [TokenEnd, TokenEndCode] = getCodeAndBuffer("e");
-const [TokenColon, TokenColonCode] = getCodeAndBuffer(":");
-
-class Writer {
-  private buffers: Buffer[] = [];
-
-  public static write(data: unknown): Buffer {
-    const writer = new Writer();
-    writer.write(data);
-    return Buffer.concat(writer.buffers);
-  }
-
-  private write(value: unknown): void {
-    if (value === null || value === undefined) {
-      throw new Error(`Unsupported data type`);
+const isUrlSafe = (char: string) => /[a-zA-Z0-9\-\._~]/.test(char);
+const urlencodeBuffer = (buf: Buffer): string => {
+  let encoded = "";
+  for (let i = 0; i < buf.length; i++) {
+    const charBuf = Buffer.from("00", "hex");
+    charBuf.writeUInt8(buf[i]);
+    const char = charBuf.toString();
+    // if the character is safe, then just print it, otherwise encode
+    if (isUrlSafe(char)) {
+      encoded += char;
+    } else {
+      encoded += `%${charBuf.toString("hex").toUpperCase()}`;
     }
-
-    if (Buffer.isBuffer(value) || typeof value === "string") {
-      this.string(value);
-    } else if (typeof value === "number") {
-      this.integer(value);
-    } else if (typeof value === "object") {
-      if (Array.isArray(value)) {
-        this.list(value);
-      } else {
-        this.dictionary(value as Record<string, unknown>);
-      }
-    } else throw new Error(`Unsupported data type ${typeof value}`);
   }
+  return encoded;
+};
 
-  private dictionary(value: Record<string, unknown>): void {
-    const keys = Object.keys(value).sort();
-
-    this.buffers.push(TokenDictionary);
-
-    for (const key of keys) {
-      this.string(key);
-      this.write(value[key]);
-    }
-
-    this.buffers.push(TokenEnd);
-  }
-
-  private string(value: string | Buffer): void {
-    if (!Buffer.isBuffer(value)) {
-      value = Buffer.from(value);
-    }
-
-    this.buffers.push(Buffer.from(String(value.length)), TokenColon, value);
-  }
-
-  private integer(value: number): void {
-    this.buffers.push(TokenInteger, Buffer.from(String(value)), TokenEnd);
-  }
-
-  private list(data: unknown[]): void {
-    this.buffers.push(TokenList);
-
-    for (const item of data) {
-      this.write(item);
-    }
-
-    this.buffers.push(TokenEnd);
-  }
-}
-
-class Reader {
-  private index: number = 0;
-  constructor(
-    private readonly value: Buffer,
-    private readonly stringsAsBuffer = true
-  ) {}
-
-  private get current() {
-    return this.value.at(this.index);
-  }
-
-  public read(): unknown {
-    switch (this.current) {
-      case TokenIntegerCode:
-        return this.integer();
-      case TokenListCode:
-        return this.list();
-      case TokenDictionaryCode:
-        return this.dictionary();
-    }
-
-    return this.string();
-  }
-
-  public dictionary(): Record<string, unknown> {
-    ++this.index;
-    const result: Record<string, unknown> = {};
-
-    while (this.current !== TokenEndCode) {
-      const key = this.string();
-      const value = this.read();
-
-      result[String(key)] = value;
-    }
-
-    return result;
-  }
-
-  public list(): readonly unknown[] {
-    ++this.index;
-    const result: unknown[] = [];
-
-    while (!(this.current === TokenEndCode)) {
-      result.push(this.read());
-    }
-
-    ++this.index;
-
-    return result;
-  }
-
-  public integer(): number {
-    const endIndex = this.value.indexOf(TokenEnd, this.index + 1);
-    const rawValue = this.value.subarray(this.index + 1, endIndex);
-    const value = parseInt(rawValue.toString(), 10);
-
-    if (!Number.isFinite(value)) {
-      throw new Error("Failed to decode integer");
-    }
-
-    this.index = endIndex + 1;
-
-    return value;
-  }
-
-  public string(): Buffer | string {
-    const colonIndex = this.value.indexOf(TokenColon, this.index);
-    if (colonIndex < 0) {
-      throw new Error("Failed to decode string (can't find colon)");
-    }
-
-    const prefix = this.value.subarray(this.index, colonIndex);
-    const length = parseInt(prefix.toString(), 10);
-
-    if (!Number.isFinite(length) || length === 0) {
-      throw new Error("Failed to decode string length");
-    }
-
-    this.index = colonIndex + 1 + length;
-
-    const string = this.value.subarray(this.index - length, this.index);
-    return this.stringsAsBuffer ? string : String(string);
-  }
-}
-
-const getPieceHashes = (pieces: Buffer): readonly string[] => {
+const parsePeers = (peers: Buffer): string[] => {
   const result: string[] = [];
 
   let idx = 0;
-  while (idx < pieces.length) {
-    result.push(pieces.subarray(idx, idx + 20).toString("hex"));
-    idx += 20;
+  while (idx < peers.length) {
+    const peer = peers.subarray(idx, idx + 6);
+
+    const ip = Array.from({ length: 4 }, (_, idx) => peer.readUInt8(idx)).join(
+      "."
+    );
+
+    const port = peer.readUInt16BE(4);
+    result.push([ip, port].join(":"));
+
+    idx += 6;
   }
 
   return result;
 };
 
-function main() {
+const main = async () => {
   const command = argv[2];
 
   switch (command) {
     case "decode":
-      const bencodedValue = argv[3];
-
-      // In JavaScript, there's no need to manually convert bytes to string for printing
-      // because JS doesn't distinguish between bytes and strings in the same way Python does.
-      console.log(
-        JSON.stringify(new Reader(Buffer.from(bencodedValue), false).read())
-      );
-
+      console.log(JSON.stringify(decode(argv[3])));
       break;
-    case "info":
+
+    case "info": {
       const filename = argv[3];
-      const data = readFileSync(filename);
 
-      const { announce, info } = new Reader(data).read() as Record<
-        string,
-        unknown
-      >;
+      const torrent = await readTorrentFile(filename);
 
-      const {
-        length,
-        "piece length": pieceLength,
-        pieces,
-      } = info as Record<string, unknown> & {
-        pieces: Buffer;
-      };
-
-      const hash = createHash("sha-1");
-      const digest = hash.update(Writer.write(info)).end().digest("hex");
-
-      console.log(`Tracker URL: ${announce}
-Length: ${length}
-Info Hash: ${digest}
-Piece Length: ${pieceLength}
+      console.log(`Tracker URL: ${torrent.announce}
+Length: ${torrent.length}
+Info Hash: ${torrent.infoHash.toString("hex")}
+Piece Length: ${torrent.pieceLength}
 Piece Hashes:
-${getPieceHashes(pieces).join("\n")}`);
+${torrent.pieceHashes.map((hash) => hash.toString("hex")).join("\n")}`);
 
       break;
+    }
+    case "peers": {
+      const filename = argv[3];
+
+      const torrent = await readTorrentFile(filename);
+
+      const url = new URL(torrent.announce);
+      url.searchParams.set("peer_id", "00112233445566778899");
+      url.searchParams.set("port", String(6881));
+      url.searchParams.set("uploaded", String(0));
+      url.searchParams.set("downloaded", String(0));
+      url.searchParams.set("left", String(torrent.length));
+      url.searchParams.set("compact", String(1));
+
+      // safe bytes encoded, avoiding double encoding
+      url.search += `&info_hash=${urlencodeBuffer(torrent.infoHash)}`;
+
+      const response = await fetch(url);
+
+      const { "failure reason": error, ...other } = decode(
+        Buffer.from(await response.arrayBuffer())
+      ) as any;
+
+      if (error) {
+        console.error("Error:", error.toString());
+      } else if (other.peers) {
+        console.log(parsePeers(other.peers).join("\n"));
+      } else {
+        console.log({ ...other });
+      }
+
+      break;
+    }
     default:
       throw new Error(`Unknown command ${command}`);
   }
-}
+};
 
-main();
+(async () => {
+  await main();
+})();
