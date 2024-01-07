@@ -14,31 +14,27 @@ interface TorrentData {
 }
 
 export class Torrent {
-  #data: TorrentData;
-
-  constructor(data: TorrentData) {
-    this.#data = data;
-  }
+  constructor(private readonly data: TorrentData) {}
 
   public get announce(): string {
-    return this.#data.announce.toString();
+    return this.data.announce.toString();
   }
 
   public get length(): number {
-    return this.#data.info.length;
+    return this.data.info.length;
   }
 
   public get infoHash(): Buffer {
-    return createHash("sha-1").update(encode(this.#data.info)).end().digest();
+    return createHash("sha-1").update(encode(this.data.info)).end().digest();
   }
 
   public get pieceLength(): number {
-    return this.#data.info["piece length"];
+    return this.data.info["piece length"];
   }
 
   public get pieceHashes(): Buffer[] {
     const result: Buffer[] = [];
-    const pieces = this.#data.info.pieces;
+    const pieces = this.data.info.pieces;
 
     let idx = 0;
     while (idx < pieces.length) {
