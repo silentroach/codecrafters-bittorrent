@@ -8,3 +8,4 @@ export const [TokenList, TokenListCode] = getCodeAndBuffer("l");
 export const [TokenDictionary, TokenDictionaryCode] = getCodeAndBuffer("d");
 export const [TokenEnd, TokenEndCode] = getCodeAndBuffer("e");
 export const [TokenColon, TokenColonCode] = getCodeAndBuffer(":");
+export const TokenZeroCode = "0".charCodeAt(0);

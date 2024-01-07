@@ -1,7 +1,8 @@
 import { argv } from "node:process";
 
-import { decode } from "./bencode";
+import { decode } from "./bencoding";
 import { readTorrentFile } from "./torrent";
+import { stringifyBendecoded } from "./utils";
 
 const isUrlSafe = (char: string) => /[a-zA-Z0-9\-\._~]/.test(char);
 const urlencodeBuffer = (buf: Buffer): string => {
@@ -45,7 +46,7 @@ const main = async () => {
 
   switch (command) {
     case "decode":
-      console.log(JSON.stringify(decode(argv[3])));
+      console.log(JSON.stringify(stringifyBendecoded(decode(argv[3]))));
       break;
 
     case "info": {

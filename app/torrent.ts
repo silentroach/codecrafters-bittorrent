@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { createHash } from "node:crypto";
-import { decode, encode } from "./bencode";
+import { decode, encode } from "./bencoding";
 
 // @todo unsafe, better check?
 interface TorrentData {
