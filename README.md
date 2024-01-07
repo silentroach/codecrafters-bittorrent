@@ -1,4 +1,4 @@
-[![progress-banner](https://backend.codecrafters.io/progress/bittorrent/f25db628-51b6-4afc-a66a-bc7e962a1dce)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+[![progress-banner](https://backend.codecrafters.io/progress/bittorrent/f25db628-51b6-4afc-a66a-bc7e962a1dce)](https://app.codecrafters.io/users/silentroach)
 
 This is a starting point for JavaScript solutions to the
 ["Build Your Own BitTorrent" Challenge](https://app.codecrafters.io/courses/bittorrent/overview).
